@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar + PLN Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0b0f14;
+  --bg2:       #111820;
+  --bg3:       #1a2332;
+  --border:    rgba(255,255,255,0.07);
+  --border2:   rgba(255,255,255,0.12);
+  --text:      #e8edf4;
+  --text2:     #8a9ab0;
+  --text3:     #4a5a70;
+  --solar:     #f5a623;
+  --solar-dim: rgba(245,166,35,0.12);
+  --pln:       #4fc3f7;
+  --pln-dim:   rgba(79,195,247,0.1);
+  --green:     #4caf82;
+  --green-dim: rgba(76,175,130,0.12);
+  --red:       #ef5350;
+  --red-dim:   rgba(239,83,80,0.12);
+  --amber:     #ffb74d;
+  --amber-dim: rgba(255,183,77,0.12);
+  --purple:    #ce93d8;
+  --purple-dim:rgba(206,147,216,0.12);
+  --r: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 0;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 1000;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
+
+/* HEADER */
+.hdr {
+  display: flex; align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+}
+.hdr-title { display: flex; align-items: center; gap: 14px; }
+.logo {
+  width: 42px; height: 42px;
+  background: var(--solar-dim);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.hdr h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+.hdr p  { font-size: 12px; color: var(--text3); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+.conn-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid var(--red); background: var(--red-dim); color: var(--red);
+  transition: all 0.3s;
+}
+.conn-badge.on { border-color: var(--green); background: var(--green-dim); color: var(--green); }
+.conn-badge::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* WARN */
+.warn {
+  display: none;
+  background: var(--amber-dim); border: 1px solid rgba(255,183,77,0.3);
+  border-radius: var(--r); padding: 10px 16px;
+  font-size: 13px; color: var(--amber); margin-bottom: 18px;
+}
+
+/* ACTIONS */
+.actions {
+  display: flex; gap: 8px; margin-bottom: 22px;
+  flex-wrap: wrap; align-items: stretch;
+}
+.btn {
+  padding: 8px 18px; border-radius: var(--r);
+  border: 1px solid var(--border2); background: var(--bg2);
+  color: var(--text2); font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: inherit; transition: all 0.15s;
+}
+.btn:hover { background: var(--bg3); color: var(--text); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn.connect-btn {
+  background: var(--green-dim); color: var(--green);
+  border-color: rgba(76,175,130,0.4); font-weight: 600;
+}
+.btn.connect-btn:hover { background: rgba(76,175,130,0.2); }
+.btn.connect-btn.active {
+  background: var(--red-dim); color: var(--red);
+  border-color: rgba(239,83,80,0.4);
+}
+.info-pill {
+  flex: 1; min-width: 180px;
+  padding: 8px 14px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: var(--r);
+  font-size: 12px; color: var(--text3);
+  font-family: 'JetBrains Mono', monospace;
+  display: flex; align-items: center;
+}
+
+/* METRICS */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px; margin-bottom: 16px;
+}
+@media(max-width:900px){ .metrics{ grid-template-columns: repeat(3,1fr); } }
+@media(max-width:540px){ .metrics{ grid-template-columns: repeat(2,1fr); } }
+.metric {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 16px;
+  position: relative; overflow: hidden; transition: border-color 0.3s;
+}
+.metric::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--accent, var(--border)); transition: background 0.3s;
+}
+.metric.solar { --accent: var(--solar); }
+.metric.pln   { --accent: var(--pln);   }
+.metric.green { --accent: var(--green); }
+.metric .lbl {
+  font-size: 10px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.8px;
+  margin-bottom: 8px; font-family: 'JetBrains Mono', monospace;
+}
+.metric .val {
+  font-size: 24px; font-weight: 700; color: var(--text);
+  line-height: 1; font-family: 'JetBrains Mono', monospace;
+}
+.metric .unit { font-size: 13px; font-weight: 400; color: var(--text3); }
+.metric .sub  {
+  font-size: 10px; color: var(--text3); margin-top: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* CARD */
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 18px; margin-bottom: 12px;
+}
+.card-hdr {
+  display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 14px;
+}
+.card-hdr .ctitle {
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.6px;
+}
+.card-hdr .csub { font-size: 11px; color: var(--text3); font-family: 'JetBrains Mono', monospace; }
+
+/* RELAY */
+.relay-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+@media(max-width:540px){ .relay-grid{ grid-template-columns: repeat(4,1fr); } }
+.relay-item {
+  text-align: center; padding: 10px 6px 8px;
+  border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg); transition: all 0.2s;
+}
+.relay-item .rname {
+  font-size: 11px; font-weight: 600; color: var(--text3);
+  font-family: 'JetBrains Mono', monospace; letter-spacing: 0.5px;
+}
+.relay-item .rdot {
+  width: 8px; height: 8px; border-radius: 50%;
+  margin: 6px auto 0; background: var(--text3); transition: all 0.2s;
+}
+.relay-item.on { background: var(--green-dim); border-color: rgba(76,175,130,0.35); }
+.relay-item.on .rname { color: var(--green); }
+.relay-item.on .rdot  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+/* TABLE */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  padding: 8px 14px; text-align: left; color: var(--text3);
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.7px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  white-space: nowrap; font-family: 'JetBrains Mono', monospace;
+}
+td {
+  padding: 9px 14px; color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap; font-size: 12px;
+}
+td.ts  { font-family: 'JetBrains Mono', monospace; color: var(--text3); font-size: 11px; }
+td.vv  { font-family: 'JetBrains Mono', monospace; color: var(--solar); font-weight: 600; font-size: 13px; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg3); }
+
+/* PILLS */
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  font-size: 10px; font-weight: 600;
+  font-family: 'JetBrains Mono', monospace; letter-spacing: 0.3px;
+  border: 1px solid transparent;
+}
+.pill.penuh    { background: var(--green-dim);  color: var(--green);  border-color: rgba(76,175,130,0.3);  }
+.pill.normal   { background: var(--pln-dim);    color: var(--pln);    border-color: rgba(79,195,247,0.3);  }
+.pill.lemah    { background: var(--amber-dim);  color: var(--amber);  border-color: rgba(255,183,77,0.3);  }
+.pill.rendah   { background: var(--red-dim);    color: var(--red);    border-color: rgba(239,83,80,0.3);   }
+.pill.pln-on   { background: var(--green-dim);  color: var(--green);  border-color: rgba(76,175,130,0.3);  }
+.pill.pln-off  { background: var(--red-dim);    color: var(--red);    border-color: rgba(239,83,80,0.3);   }
+.pill.periodic { background: var(--bg3);        color: var(--text3);  border-color: var(--border2);        }
+.pill.volt     { background: var(--solar-dim);  color: var(--solar);  border-color: rgba(245,166,35,0.3);  }
+.pill.level    { background: var(--pln-dim);    color: var(--pln);    border-color: rgba(79,195,247,0.3);  }
+.pill.startup  { background: var(--purple-dim); color: var(--purple); border-color: rgba(206,147,216,0.3); }
+
+.lvl-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--solar-dim); color: var(--solar);
+  font-size: 12px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid rgba(245,166,35,0.3);
+}
+.empty {
+  padding: 48px; text-align: center; color: var(--text3);
+  font-size: 13px; font-family: 'JetBrains Mono', monospace;
+}
+.footer {
+  font-size: 11px; color: var(--text3); text-align: center;
+  margin-top: 24px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div class="hdr-title">
+      <div class="logo">☀️</div>
+      <div>
+        <h1>Solar + PLN Monitor</h1>
+        <p>Hybrid Energy · ESP32 + DS3231 · Log tiap 5 menit / perubahan tegangan</p>
+      </div>
+    </div>
+    <span class="conn-badge" id="connBadge">OFFLINE</span>
+  </div>
+
+  <div class="warn" id="warnBar">
+    ⚠️ Browser tidak mendukung Web Serial API. Gunakan <strong>Google Chrome</strong> atau <strong>Microsoft Edge</strong> versi terbaru.
+  </div>
+
+  <div class="actions">
+    <button class="btn connect-btn" id="btnConnect" onclick="handleConnect()">⚡ Hubungkan ESP32</button>
+    <button class="btn" onclick="exportCSV()">↓ Ekspor CSV</button>
+    <button class="btn" onclick="clearData()">✕ Hapus Data</button>
+    <div class="info-pill" id="infoBar">Colok ESP32 via USB → klik Hubungkan ESP32</div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="metrics">
+    <div class="metric solar">
+      <div class="lbl">Tegangan Solar</div>
+      <div class="val" id="mVolt">—<span class="unit"> V</span></div>
+      <div class="sub" id="mTime">no data</div>
+    </div>
+    <div class="metric solar">
+      <div class="lbl">Level Aktif</div>
+      <div class="val" id="mLevel">—<span class="unit">/5</span></div>
+      <div class="sub" id="mCond">—</div>
+    </div>
+    <div class="metric pln">
+      <div class="lbl">Status PLN</div>
+      <div class="val" id="mPLN" style="font-size:18px">—</div>
+      <div class="sub" id="mPLNsub">—</div>
+    </div>
+    <div class="metric green">
+      <div class="lbl">Total Catatan</div>
+      <div class="val" id="mCount">0</div>
+      <div class="sub" id="mCountSub">sesi ini</div>
+    </div>
+    <div class="metric solar">
+      <div class="lbl">Tegangan Maks</div>
+      <div class="val" id="mMax">—<span class="unit"> V</span></div>
+      <div class="sub" id="mMaxTime">—</div>
+    </div>
+    <div class="metric solar">
+      <div class="lbl">Tegangan Min</div>
+      <div class="val" id="mMin">—<span class="unit"> V</span></div>
+      <div class="sub" id="mMinTime">—</div>
+    </div>
+  </div>
+
+  <!-- RELAY STATUS -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="ctitle">Status Relay</span>
+      <span class="csub">S = Solar &nbsp;·&nbsp; P = PLN &nbsp;·&nbsp; ● = ON</span>
+    </div>
+    <div class="relay-grid">
+      <div class="relay-item" id="r0"><div class="rname">S1</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r1"><div class="rname">S2</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r2"><div class="rname">S3</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r3"><div class="rname">S4</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r4"><div class="rname">P1</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r5"><div class="rname">P2</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r6"><div class="rname">P3</div><div class="rdot"></div></div>
+      <div class="relay-item" id="r7"><div class="rname">P4</div><div class="rdot"></div></div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="ctitle">Tegangan Solar vs Waktu</span>
+      <span class="csub" id="chartRange">—</span>
+    </div>
+    <canvas id="voltChart" height="180"></canvas>
+  </div>
+
+  <!-- TABLE -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="ctitle">Log Data</span>
+      <span class="csub" id="rowCountLabel">0 baris</span>
+    </div>
+    <div class="tbl-wrap" id="tableBody">
+      <div class="empty">// awaiting connection...</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Solar + PLN Monitor &nbsp;·&nbsp; Web Serial API Chrome/Edge &nbsp;·&nbsp; Baud 115200 &nbsp;·&nbsp; Log: 5min / ΔV≥0.3V / Level change
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────
+let port, reader, connected = false;
+let allData = [], maxE = null, minE = null;
+let chart;
+
+const levelRelays = [
+  { s:[0,0,0,0], p:[1,1,1,1] },
+  { s:[1,0,0,0], p:[1,1,1,0] },
+  { s:[1,1,0,0], p:[1,1,0,0] },
+  { s:[1,1,1,0], p:[1,0,0,0] },
+  { s:[1,1,1,1], p:[0,0,0,0] },
+];
+
+// ─────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────
+window.addEventListener('load', () => {
+  if (!('serial' in navigator)) {
+    document.getElementById('warnBar').style.display = 'block';
+    document.getElementById('btnConnect').disabled = true;
+  }
+  initChart();
+});
+
+// ─────────────────────────────────────────
+//  CONNECT
+// ─────────────────────────────────────────
+function handleConnect() {
+  if (connected) { doDisconnect(); return; }
+
+  navigator.serial.requestPort()
+    .then(p => {
+      port = p;
+      return port.open({ baudRate: 115200 });
+    })
+    .then(() => {
+      connected = true;
+      document.getElementById('btnConnect').textContent = '✕ Putuskan';
+      document.getElementById('btnConnect').classList.add('active');
+      document.getElementById('connBadge').textContent = 'LIVE';
+      document.getElementById('connBadge').classList.add('on');
+      document.getElementById('infoBar').textContent = 'Terhubung · menunggu data ESP32...';
+      startReading();
+    })
+    .catch(err => {
+      document.getElementById('infoBar').textContent =
+        err.name === 'NotFoundError'
+          ? 'Tidak ada port dipilih. Pastikan ESP32 tercolok lalu coba lagi.'
+          : 'Error: ' + err.message;
+    });
+}
+
+async function doDisconnect() {
+  connected = false;
+  try { if (reader) await reader.cancel(); } catch(e){}
+  try { await port.close(); } catch(e){}
+  document.getElementById('btnConnect').textContent = '⚡ Hubungkan ESP32';
+  document.getElementById('btnConnect').classList.remove('active');
+  document.getElementById('connBadge').textContent = 'OFFLINE';
+  document.getElementById('connBadge').classList.remove('on');
+  document.getElementById('infoBar').textContent = 'Koneksi diputus. Data tersimpan di halaman ini.';
+}
+
+// ─────────────────────────────────────────
+//  READ LOOP
+// ─────────────────────────────────────────
+function startReading() {
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable);
+  reader = decoder.readable.getReader();
+  let buf = '';
+
+  function pump() {
+    reader.read().then(({ value, done }) => {
+      if (done || !connected) return;
+      buf += value;
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      lines.forEach(l => processLine(l.trim()));
+      pump();
+    }).catch(() => {});
+  }
+  pump();
+}
+
+// ─────────────────────────────────────────
+//  PROCESS LINE
+//  Format: TIMESTAMP,VOLTAGE_SOLAR,LEVEL,PLN_STATUS,CONDITION,LOG_REASON
+// ─────────────────────────────────────────
+function processLine(line) {
+  if (!line) return;
+  if (!line.match(/^\d{4}-\d{2}-\d{2}/)) return; // harus diawali tanggal
+
+  const p = line.split(',');
+  if (p.length < 6) return;
+
+  const ts     = p[0].trim();
+  const volt   = parseFloat(p[1]);
+  const lvl    = parseInt(p[2]);
+  const pln    = p[3].trim().toUpperCase();
+  const cond   = p[4].trim().toUpperCase();
+  const reason = p[5].trim().toUpperCase();
+
+  if (isNaN(volt) || isNaN(lvl)) return;
+
+  const entry = { ts, volt, lvl, pln, cond, reason };
+  allData.unshift(entry);
+  if (allData.length > 1000) allData.pop();
+
+  if (!maxE || volt > maxE.volt) maxE = entry;
+  if (!minE || volt < minE.volt) minE = entry;
+
+  updateMetrics(entry);
+  updateRelays(lvl);
+  updateChart();
+  renderTable();
+}
+
+// ─────────────────────────────────────────
+//  METRICS
+// ─────────────────────────────────────────
+function updateMetrics(e) {
+  document.getElementById('mVolt').innerHTML   = e.volt.toFixed(2) + '<span class="unit"> V</span>';
+  document.getElementById('mTime').textContent = e.ts;
+  document.getElementById('mLevel').innerHTML  = e.lvl + '<span class="unit">/5</span>';
+  document.getElementById('mCond').textContent = e.cond;
+  document.getElementById('mPLN').textContent  = e.pln;
+  document.getElementById('mPLN').style.color  = e.pln === 'ON' ? 'var(--green)' : 'var(--red)';
+  document.getElementById('mPLNsub').textContent = e.pln === 'ON' ? 'Tersedia' : 'Tidak Tersedia';
+  document.getElementById('mCount').textContent = allData.length;
+  document.getElementById('mCountSub').textContent =
+    'terakhir: ' + (e.reason === 'PERIODIC' ? '5min' :
+                    e.reason === 'VOLT_CHANGE' ? 'ΔVolt' :
+                    e.reason === 'LEVEL_CHANGE' ? 'ΔLevel' : e.reason);
+  if (maxE) {
+    document.getElementById('mMax').innerHTML    = maxE.volt.toFixed(2) + '<span class="unit"> V</span>';
+    document.getElementById('mMaxTime').textContent = maxE.ts.split(' ')[1] || '—';
+  }
+  if (minE) {
+    document.getElementById('mMin').innerHTML    = minE.volt.toFixed(2) + '<span class="unit"> V</span>';
+    document.getElementById('mMinTime').textContent = minE.ts.split(' ')[1] || '—';
+  }
+}
+
+// ─────────────────────────────────────────
+//  RELAY
+// ─────────────────────────────────────────
+function updateRelays(lvl) {
+  const idx = Math.max(0, Math.min(4, lvl - 1));
+  const lr  = levelRelays[idx];
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('r' + i).className     = 'relay-item' + (lr.s[i] ? ' on' : '');
+    document.getElementById('r' + (i+4)).className = 'relay-item' + (lr.p[i] ? ' on' : '');
+  }
+}
+
+// ─────────────────────────────────────────
+//  CHART
+// ─────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('voltChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Tegangan Solar (V)',
+          data: [],
+          borderColor: '#f5a623',
+          backgroundColor: 'rgba(245,166,35,0.07)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          tension: 0.35,
+          fill: true,
+          yAxisID: 'yV'
+        },
+        {
+          label: 'Level (1–5)',
+          data: [],
+          borderColor: '#4fc3f7',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.2,
+          borderDash: [4, 3],
+          yAxisID: 'yL'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: '#8a9ab0', font: { size: 12, family: 'JetBrains Mono' }, boxWidth: 12, padding: 18 }
+        },
+        tooltip: {
+          backgroundColor: '#1a2332',
+          borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+          titleColor: '#8a9ab0', bodyColor: '#e8edf4',
+          titleFont: { family: 'JetBrains Mono', size: 11 },
+          bodyFont:  { family: 'JetBrains Mono', size: 12 },
+          callbacks: {
+            label: ctx => ctx.datasetIndex === 0
+              ? '  Volt: ' + ctx.parsed.y.toFixed(2) + ' V'
+              : '  Level: ' + ctx.parsed.y
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#4a5a70', font: { size: 10, family: 'JetBrains Mono' }, maxRotation: 45, maxTicksLimit: 10 },
+          grid:  { color: 'rgba(255,255,255,0.04)' }
+        },
+        yV: {
+          position: 'left', min: 0, max: 16,
+          title: { display: true, text: 'Volt (V)', color: '#f5a623', font: { size: 11 } },
+          ticks: { color: '#8a9ab0', font: { size: 11, family: 'JetBrains Mono' } },
+          grid:  { color: 'rgba(255,255,255,0.04)' }
+        },
+        yL: {
+          position: 'right', min: 0, max: 6,
+          title: { display: true, text: 'Level', color: '#4fc3f7', font: { size: 11 } },
+          ticks: { stepSize: 1, color: '#8a9ab0', font: { size: 11, family: 'JetBrains Mono' } },
+          grid:  { drawOnChartArea: false }
+        }
+      }
+    }
+  });
+}
+
+function updateChart() {
+  const slice = [...allData].reverse().slice(-200);
+  chart.data.labels           = slice.map(d => d.ts.split(' ')[1] || d.ts);
+  chart.data.datasets[0].data = slice.map(d => d.volt);
+  chart.data.datasets[1].data = slice.map(d => d.lvl);
+  chart.update('none');
+  if (slice.length > 1) {
+    const a = slice[0].ts.split(' ')[1] || '';
+    const b = slice[slice.length-1].ts.split(' ')[1] || '';
+    document.getElementById('chartRange').textContent = a + ' → ' + b;
+  }
+}
+
+// ─────────────────────────────────────────
+//  TABLE
+// ─────────────────────────────────────────
+function renderTable() {
+  const rows = allData.slice(0, 300);
+  document.getElementById('rowCountLabel').textContent = allData.length + ' baris';
+  if (!rows.length) {
+    document.getElementById('tableBody').innerHTML = '<div class="empty">// awaiting data...</div>';
+    return;
+  }
+
+  const condClass   = { PENUH:'penuh', NORMAL:'normal', LEMAH:'lemah', RENDAH:'rendah' };
+  const reasonClass = {
+    PERIODIC:     'periodic',
+    VOLT_CHANGE:  'volt',
+    LEVEL_CHANGE: 'level',
+    STARTUP:      'startup'
+  };
+  const reasonLabel = {
+    PERIODIC:     '5 menit',
+    VOLT_CHANGE:  'ΔVoltage',
+    LEVEL_CHANGE: 'ΔLevel',
+    STARTUP:      'Startup'
+  };
+
+  let html = `<table><thead><tr>
+    <th>Waktu</th>
+    <th>Tegangan Solar</th>
+    <th>Level</th>
+    <th>PLN</th>
+    <th>Kondisi</th>
+    <th>Alasan Log</th>
+  </tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    const cc = condClass[r.cond]     || 'rendah';
+    const rc = reasonClass[r.reason] || 'periodic';
+    const rl = reasonLabel[r.reason] || r.reason;
+    html += `<tr>
+      <td class="ts">${r.ts}</td>
+      <td class="vv">${r.volt.toFixed(2)} V</td>
+      <td><span class="lvl-badge">${r.lvl}</span></td>
+      <td><span class="pill ${r.pln === 'ON' ? 'pln-on' : 'pln-off'}">${r.pln}</span></td>
+      <td><span class="pill ${cc}">${r.cond}</span></td>
+      <td><span class="pill ${rc}">${rl}</span></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('tableBody').innerHTML = html;
+}
+
+// ─────────────────────────────────────────
+//  EXPORT CSV
+// ─────────────────────────────────────────
+function exportCSV() {
+  if (!allData.length) { alert('Belum ada data.'); return; }
+  let csv = 'Timestamp,Tegangan Solar (V),Level,PLN,Kondisi,Alasan Log\n';
+  [...allData].reverse().forEach(r => {
+    csv += `${r.ts},${r.volt.toFixed(2)},${r.lvl},${r.pln},${r.cond},${r.reason}\n`;
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'solar_log_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+// ─────────────────────────────────────────
+//  CLEAR
+// ─────────────────────────────────────────
+function clearData() {
+  if (allData.length && !confirm('Hapus semua data log?')) return;
+  allData = []; maxE = null; minE = null;
+  chart.data.labels = [];
+  chart.data.datasets[0].data = [];
+  chart.data.datasets[1].data = [];
+  chart.update('none');
+  document.getElementById('tableBody').innerHTML = '<div class="empty">// cleared.</div>';
+  ['mVolt','mLevel','mMax','mMin'].forEach(id => document.getElementById(id).innerHTML = '—');
+  ['mTime','mCond','mPLNsub','mMaxTime','mMinTime','chartRange'].forEach(id =>
+    document.getElementById(id).textContent = '—');
+  document.getElementById('mPLN').textContent = '—';
+  document.getElementById('mCount').textContent = '0';
+  document.getElementById('mCountSub').textContent = 'sesi ini';
+  document.getElementById('rowCountLabel').textContent = '0 baris';
+  for (let i = 0; i < 8; i++) document.getElementById('r'+i).className = 'relay-item';
+}
+</script>
+</body>
+</html>
